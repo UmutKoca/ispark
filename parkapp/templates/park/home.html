@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>İspark</title>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.1.1/mapbox-gl.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta2/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-BmbxuPwQa2lc/FVzBcNJ7UAyJxM6wuqIj61tLrc4wSX0szH/Ev+nYRRuWlolflfl" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-b5kHyXgcpbZJO/tY9Ul7kGkf1S0CWuKcCD38l8YkeH8z8QjE0GmW1gYU5S9FOnJ0"
+        crossorigin="anonymous"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.1.1/mapbox-gl.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+
+    <div class="modal fade" id="basicExampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
+        aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLabel">Park Güncelle</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form class="form-inline">
+                        <div class="form-group">
+                            <label for="parkName">Park Adı:</label>
+                            <input type="input" class="form-control" id="parkName">
+
+                            <label for="capacity">Kapasite: </label>
+                            <input type="input" class="form-control" id="capacity">
+
+                            <label for="emptyCapacity">Boş Kapasite: </label>
+                            <input type="input" class="form-control" id="emptyCapacity">
+
+                            <label for="workHours">Çalışma Saatleri: </label>
+                            <input type="input" class="form-control" id="workHours">
+
+                            <label for="parkType">Park Tipi: </label>
+                            <input type="input" class="form-control" id="parkType">
+
+                            <label for="freeTime">Boş Saatler: </label>
+                            <input type="input" class="form-control" id="freeTime">
+
+                            <label for="district ">Bölge: </label>
+                            <input type="input" class="form-control" id="district">
+
+                            <label for="isOpen ">Açık Mı: </label>
+                            <input type="input" class="form-control" id="isOpen">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" id="closeModal" class="btn btn-secondary" data-dismiss="modal">Kapat</button>
+                    <button type="button" class="btn btn-primary" id='saveChanges'>Değişiklikleri Kaydet</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1IjoidW11dGtvY2EiLCJhIjoiY2trOW9pcnBrMGtuMzJxczljaG80bjRiNCJ9.9Xlgsw9VE0jtWnGAHoQ2qQ';
+        var map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/dark-v10',
+            center: [28.978359, 41.008240],
+            zoom: 9
+        });
+
+        map.on('load', function () {
+
+            map.addSource('parks', {
+                type: 'geojson',
+
+                data:
+                    'http://localhost:8000/api/park/list',
+                cluster: true,
+                clusterMaxZoom: 14,
+                clusterRadius: 50
+            });
+
+            map.addLayer({
+                id: 'clusters',
+                type: 'circle',
+                source: 'parks',
+                filter: ['has', 'point_count'],
+                paint: {
+
+                    'circle-color': [
+                        'step',
+                        ['get', 'point_count'],
+                        '#51bbd6',
+                        100,
+                        '#f1f075',
+                        750,
+                        '#f28cb1'
+                    ],
+                    'circle-radius': [
+                        'step',
+                        ['get', 'point_count'],
+                        20,
+                        100,
+                        30,
+                        750,
+                        40
+                    ]
+                }
+            });
+
+            map.addLayer({
+                id: 'cluster-count',
+                type: 'symbol',
+                source: 'parks',
+                filter: ['has', 'point_count'],
+                layout: {
+                    'text-field': '{point_count_abbreviated}',
+                    'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+                    'text-size': 12
+                }
+            });
+
+            map.addLayer({
+                id: 'unclustered-point',
+                type: 'circle',
+                source: 'parks',
+                filter: ['!', ['has', 'point_count']],
+                paint: {
+                    'circle-color': '#11b4da',
+                    'circle-radius': 4,
+                    'circle-stroke-width': 1,
+                    'circle-stroke-color': '#fff'
+                }
+            });
+
+
+            map.on('click', 'clusters', function (e) {
+                var features = map.queryRenderedFeatures(e.point, {
+                    layers: ['clusters']
+                });
+                var clusterId = features[0].properties.cluster_id;
+                map.getSource('parks').getClusterExpansionZoom(
+                    clusterId,
+                    function (err, zoom) {
+                        if (err) return;
+
+                        map.easeTo({
+                            center: features[0].geometry.coordinates,
+                            zoom: zoom
+                        });
+                    }
+                );
+            });
+
+            map.on('click', 'unclustered-point', function (e) {
+                var coordinates = e.features[0].geometry.coordinates.slice();
+                var capacity = e.features[0].properties.capacity;
+                var district = e.features[0].properties.district;
+                var emptyCapacity = e.features[0].properties.empty_capacity;
+                var freeTime = e.features[0].properties.free_time;
+                var isOpen = e.features[0].properties.is_open;
+                var lat = e.features[0].properties.lat;
+                var lng = e.features[0].properties.lng;
+                var parkId = e.features[0].properties.park_id;
+                var parkName = e.features[0].properties.park_name;
+                var parkType = e.features[0].properties.park_type;
+                var workHours = e.features[0].properties.work_hours;
+                var id = e.features[0].properties.id;
+
+                while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
+                    coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
+                }
+
+                var description = `<div class='container-fluid'>
+                                      <p>${parkName}</p>
+                                      <p>Toplam Kapasite: ${capacity} <p> 
+                                      <p>Boş Kapasite: ${emptyCapacity} <p> 
+                                      <p>İlçe: ${district} <p> 
+                                      <p>Park Tipi: ${parkType} <p> 
+                                      <p>Park Id: ${parkId} </p>
+                                      <p> Id: ${id} </p>
+                                      <p>Çalışma Saatleri: ${workHours} </p>
+                                      <p>Boş Zaman: ${freeTime} </p>
+                                      <p>Açık Mı: ${isOpen} </p>
+                                      <div>                                      
+                                      <p><button type='button' class="btn btn-primary btn-sm" data-toggle="modal" data-target="#basicExampleModal" id="updatePark">Güncelle</p>                
+                                      <p><button type='button' class="btn btn-secondary btn-sm" id="deletePark">Sil</p>
+                                      </div>
+                                  </div>`;
+                new mapboxgl.Popup()
+                    .setLngLat(coordinates)
+                    .setHTML(description)
+                    .addTo(map);
+
+
+
+
+                document.getElementById('updatePark').addEventListener('click', updatePark)
+                document.getElementById('deletePark').addEventListener('click', deletePark)
+
+
+                $('#updatePark').click(function () {
+                    $('#basicExampleModal').modal('toggle')
+                });
+
+                $('#closeModal').click(function () {
+                    $('#basicExampleModal').modal('hide');
+                    clearInput();
+                });
+
+                $('.close').click(function () {
+                    $('#basicExampleModal').modal('hide');
+                    clearInput();
+                });
+
+                $("#saveChanges").click(function () {
+                    var data = {}
+                    data.park_name = $("#parkName").val();
+                    data.work_hours = $("#workHours").val();
+                    data.capacity = parseInt($("#capacity").val());
+                    data.empty_capacity = $("#emptyCapacity").val();
+                    data.district = $("#district").val();
+                    data.park_type = $("#parkType").val();
+                    data.free_time = $("#freeTime").val();
+                    data.is_open = parseInt($("#isOpen").val());
+
+                    updatePark(data);
+                    clearInput();
+                });
+
+                function updatePark(data) {
+
+                    var data = data
+
+                    fetch('http://localhost:8000/api/park/update/' + id, {
+                        method: 'PUT',
+                        headers: {
+                            'content-type': 'application/json',
+                            authorization: 'Bearer ' + localStorage.getItem('access')
+                        },
+                        body: JSON.stringify(data)
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            console.log(data)                           
+                        })
+                        .catch(err => {
+                            console.log(err)
+                        })
+                }
+
+                function deletePark() {
+                    let data = {
+
+                    }
+
+                    fetch('http://localhost:8000/api/park/delete/' + id, {
+                        method: 'DELETE',
+                        headers: {
+                            'content-type': 'application/json',
+                            authorization: 'Bearer ' + localStorage.getItem('access')
+                        },
+                        body: JSON.stringify(data)
+                    })
+                        .then(response => {
+                            alert("Park silme işlemi başarılı !")
+                        })
+                        .catch(err => {
+                            console.log(err)
+                        })
+                }
+            });
+
+            function clearInput() {
+                $("#parkName").val('');
+                $("#capacity").val('');
+                $("#emptyCapacity").val('');
+                $("#district").val('');
+                $("#parkType").val('');
+                $("#freeTime").val('');
+                $("#isOpen").val('');
+                $("#workHours").val('');
+            }
+
+            map.on('mouseenter', 'clusters', function () {
+                map.getCanvas().style.cursor = 'pointer';
+            });
+            map.on('mouseleave', 'clusters', function () {
+                map.getCanvas().style.cursor = '';
+            });
+        });
+    </script>
+</body>
+
+</html>
